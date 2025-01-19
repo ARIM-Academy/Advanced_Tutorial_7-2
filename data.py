@@ -8,6 +8,23 @@ import skimage.transform as trans
 from PIL import Image
 
 
+Sky = [128,128,128]
+Building = [128,0,0]
+Pole = [192,192,128]
+Road = [128,64,128]
+Pavement = [60,40,222]
+Tree = [128,128,0]
+SignSymbol = [192,128,128]
+Fence = [64,64,128]
+Car = [64,0,128]
+Pedestrian = [64,64,0]
+Bicyclist = [0,128,192]
+Unlabelled = [0,0,0]
+
+COLOR_DICT = np.array([Sky, Building, Pole, Road, Pavement,
+                          Tree, SignSymbol, Fence, Car, Pedestrian, Bicyclist, Unlabelled])
+
+
 def adjustData(img,mask,flag_multi_class,num_class):
     if(flag_multi_class):
         img = img / 255
@@ -68,17 +85,22 @@ def trainGenerator(batch_size,train_path,image_folder,mask_folder,aug_dict,image
         yield (img,mask)
 
 
+
 def testGenerator(test_path,num_image = 30,target_size = (256,256),
                   flag_multi_class = False,as_gray = True):
-    for i in range(num_image):
-        img = io.imread(os.path.join(test_path,"%d.png"%i),as_gray = as_gray)
-        img = img / 255
+    
+    path_list = os.listdir(test_path)
+
+    for file in path_list:
+        img = io.imread(os.path.join(test_path, file), as_gray = as_gray)
+        if (np.max(img) > 1):
+            img = img / 255.
+
         img = trans.resize(img,target_size)
         img = np.reshape(img,img.shape+(1,)) if (not flag_multi_class) else img
         img = np.reshape(img,(1,)+img.shape)
-        
-        # Yield the image as a single-element tuple:
         yield (img,)
+
 
 def geneTrainNpy(image_path,mask_path,flag_multi_class = False,num_class = 2,image_prefix = "image",mask_prefix = "mask",image_as_gray = True,mask_as_gray = True):
     image_name_arr = glob.glob(os.path.join(image_path,"%s*.png"%image_prefix))
@@ -97,13 +119,21 @@ def geneTrainNpy(image_path,mask_path,flag_multi_class = False,num_class = 2,ima
     mask_arr = np.array(mask_arr)
     return image_arr,mask_arr
 
+def labelVisualize(num_class,color_dict,img):
+    img = img[:,:,0] if len(img.shape) == 3 else img
+    img_out = np.zeros(img.shape + (3,))
+    for i in range(num_class):
+        img_out[img == i,:] = color_dict[i]
+    return img_out / 255
 
-def saveResult(save_path, npyfile, flag_multi_class=False, num_class=2):
-    for i, item in enumerate(npyfile):
-        img = item[:,:,0]
-        img = (img - np.min(img)) / (np.max(img) - np.min(img))  # 正規化
-        img = np.uint8(img * 255)  # 0から255の範囲にスケーリング
-        im = Image.fromarray(img)
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
-        im.save(os.path.join(save_path, "%d_predict.png"%i))
+
+
+
+def saveResult(test_path,save_path,npyfile, threshold=0.5, flag_multi_class = False,num_class = 2):
+    path_list = os.listdir(test_path)
+    for i,item_i in enumerate(npyfile):
+        item = np.array(item_i, dtype=np.float)
+        item = item[:, : , np.newaxis]
+        item = (item > threshold)
+        img = labelVisualize(num_class,COLOR_DICT,item) if flag_multi_class else item[:,:,0]
+        io.imsave(os.path.join(save_path, path_list[i]),img)
