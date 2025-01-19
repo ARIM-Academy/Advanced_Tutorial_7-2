@@ -86,20 +86,23 @@ def trainGenerator(batch_size,train_path,image_folder,mask_folder,aug_dict,image
 
 
 
-def testGenerator(test_path,num_image = 30,target_size = (256,256),
-                  flag_multi_class = False,as_gray = True):
-    
-    path_list = os.listdir(test_path)
+def testGenerator(test_path, num_image = 30, target_size = (256,256), as_gray = True): 
+    images = [] # Create a list to store all images
+    for i in range(num_image):
+        # Iterate through files, not the directory itself
+        for file in os.listdir(test_path):
+            # Construct full file path
+            img_path = os.path.join(test_path, file)
+            # Check if it's a file and not a directory
+            if os.path.isfile(img_path):
+                img = io.imread(img_path, as_gray=as_gray)
+                img = img / 255.
+                img = trans.resize(img,target_size) 
+                img = np.reshape(img,img.shape+(1,)) if (not as_gray) else img
+                images.append(img) # Append the image to the list
 
-    for file in path_list:
-        img = io.imread(os.path.join(test_path, file), as_gray = as_gray)
-        if (np.max(img) > 1):
-            img = img / 255.
-
-        img = trans.resize(img,target_size)
-        img = np.reshape(img,img.shape+(1,)) if (not flag_multi_class) else img
-        img = np.reshape(img,(1,)+img.shape)
-        yield (img,)
+    # Return the entire dataset as a single NumPy array
+    return np.array(images)
 
 
 def geneTrainNpy(image_path,mask_path,flag_multi_class = False,num_class = 2,image_prefix = "image",mask_prefix = "mask",image_as_gray = True,mask_as_gray = True):
@@ -129,11 +132,27 @@ def labelVisualize(num_class,color_dict,img):
 
 
 
-def saveResult(test_path,save_path,npyfile, threshold=0.5, flag_multi_class = False,num_class = 2):
-    path_list = os.listdir(test_path)
+def saveResult(test_path, save_path, npyfile, threshold=0.5, flag_multi_class=False, num_class=2):
+    # Get only image files from the test path
+    path_list = [f for f in os.listdir(test_path) if os.path.isfile(os.path.join(test_path, f)) and f.lower().endswith(('.png', '.jpg', '.jpeg'))] 
+    num_images = min(len(path_list), len(npyfile))  # Limit iterations to the smaller length
+
     for i,item_i in enumerate(npyfile):
-        item = np.array(item_i, dtype=np.float)
+        # Break the loop if 'i' exceeds the available image files
+        if i >= len(path_list):  
+            break
+        
+        # Replace np.float with np.float64 for better precision with image data
+        item = np.array(item_i, dtype=np.float64)  
         item = item[:, : , np.newaxis]
         item = (item > threshold)
         img = labelVisualize(num_class,COLOR_DICT,item) if flag_multi_class else item[:,:,0]
-        io.imsave(os.path.join(save_path, path_list[i]),img)
+        # Stack the image to create 3 channels (grayscale to RGB)
+        img = np.stack((img,)*3, axis=-1)  
+        # Extract filename without extension and add .png extension
+        filename, _ = os.path.splitext(path_list[i])
+        
+        # Ensure save_path exists
+        os.makedirs(save_path, exist_ok=True)
+        
+        io.imsave(os.path.join(save_path, filename + ".png"), img)  # Save as PNG
